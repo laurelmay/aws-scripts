@@ -1,0 +1,10 @@
+boto3
+botocore
+tabulate
+click
+requests
+pygit2
+
+black
+boto3-stubs[all]
+pyre-check
