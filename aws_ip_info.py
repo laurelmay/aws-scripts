@@ -2,7 +2,7 @@
 
 import ipaddress
 import json
-import sys
+import socket
 
 import click
 import requests
@@ -19,6 +19,13 @@ _KEY_MAP = {
     }
 }
 
+
+def format_ip(input, resolved):
+    if input == resolved:
+        return input
+    return f"{input} ({resolved})"
+
+
 @click.command('aws-ip-info')
 @click.argument('ip-address')
 def main(ip_address: str) -> None:
@@ -26,8 +33,11 @@ def main(ip_address: str) -> None:
     Prints the information about the IP block that the given IP is a part of.
     """
 
+    resolved_ip = socket.gethostbyname(ip_address)
+    click.echo(f"Matches for {format_ip(ip_address, resolved_ip)}:")
+
     try:
-        network = ipaddress.ip_network(ip_address, strict=False)
+        network = ipaddress.ip_network(resolved_ip, strict=False)
     except ValueError:
         click.echo(f"{ip_address!r} is not a valid IP address", err=True)
         return
@@ -41,7 +51,7 @@ def main(ip_address: str) -> None:
     try:
         prefix_list = ip_data[_KEY_MAP[type(network)]['list']]
     except KeyError:
-        click.echo(f"{ip_address!r} is not a supported address type.", err=True)
+        click.echo(f"{resolved_ip!r} is not a supported address type.", err=True)
         return
     
     matches = []
@@ -52,7 +62,7 @@ def main(ip_address: str) -> None:
                 matches.append(prefix)
 
     if not matches:
-        click.echo(f"{ip_address} is not an AWS IP address.", err=True)
+        click.echo(f"{format_ip(ip_address, resolved_ip)} is not an AWS IP address.", err=True)
         return
 
     click.echo(json.dumps(matches, indent=4))
