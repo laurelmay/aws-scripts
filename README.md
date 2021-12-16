@@ -31,14 +31,13 @@ via the CodeCommit API, clones the repositories from BitBucket, and mirrors them
 to CodeCommit. This should be used for a single migration; it does not support
 continuous synchronization.
 
-### cfn-tag-support
+### cfn_tag_support.py
 
 This a script to parse the
-[CloudFormation documentation repository](https://github.com/awsdocs/aws-cloudformation-user-guide)
-to find all resources that support a `Tags` property.
-
-This likely should be refactored to work based on the CloudFormation specification
-file.
+[CloudFormation specification](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-resource-specification-format.html)
+to find all resources that support a given property (by default, `Tags`). This
+defaults to checking in `us-east-1` but any region can be provided to check since
+resource and property availability may vary by region.
 
 ### clean_log_groups.py
 
