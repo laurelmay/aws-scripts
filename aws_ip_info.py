@@ -1,46 +1,85 @@
 #!/usr/bin/env python3
 
 import ipaddress
-import json
 import socket
+from typing import Any
 
 import click
 import requests
+import tabulate
 
 _AWS_IP_URL = "https://ip-ranges.amazonaws.com/ip-ranges.json"
-_KEY_MAP = {
-    ipaddress.IPv4Network: {
-        'list': 'prefixes',
-        'net': 'ip_prefix'
-    },
-    ipaddress.IPv6Network: {
-        'list': 'ipv6_prefixes',
-        'net': 'ipv6_prefix'
-    }
-}
 
 
-def format_ip(input, resolved):
-    if input == resolved:
+def format_ip(input: str, resolved: list[str]):
+    if [input] == resolved:
         return input
-    return f"{input} ({resolved})"
+    return f"{input} ({','.join(resolved)})"
 
 
-@click.command('aws-ip-info')
-@click.argument('ip-address')
-def main(ip_address: str) -> None:
+class IpLookup:
+    address: str
+    network: ipaddress.IPv4Network | ipaddress.IPv6Network
+    _matching_prefixes: list[dict[str, Any]]
+
+    def __init__(self, address: str):
+        self.address = address
+        self.network = ipaddress.ip_network(address, strict=False)
+        self._matching_prefixes = []
+
+    def _add_match(self, prefix: dict[str, Any]) -> None:
+        self._matching_prefixes.append(prefix)
+
+    def add_if_match(self, prefix: dict[str, Any]) -> None:
+        # The address type (v4 or v6) does not match the given prefix
+        if self.prefix_key not in prefix:
+            return
+
+        if self.network.subnet_of(ipaddress.ip_network(prefix[self.prefix_key])):
+            self._add_match(prefix)
+
+    @property
+    def prefix_key(self) -> bool:
+        if self.is_v6:
+            return "ipv6_prefix"
+        return "ip_prefix"
+
+    @property
+    def is_v4(self) -> bool:
+        return type(self.network) == ipaddress.IPv4Network
+
+    @property
+    def is_v6(self) -> bool:
+        return type(self.network) == ipaddress.IPv6Network
+
+    def create_table_row(self) -> list[str]:
+        if not self._matching_prefixes:
+            return []
+        return [
+            self.address,
+            ", ".join({prefix[self.prefix_key] for prefix in self._matching_prefixes}),
+            ", ".join({prefix["region"] for prefix in self._matching_prefixes}),
+            ", ".join({prefix["service"] for prefix in self._matching_prefixes}),
+            ", ".join(
+                {prefix["network_border_group"] for prefix in self._matching_prefixes}
+            ),
+        ]
+
+
+@click.command("aws-ip-info")
+@click.argument("hostname", metavar="IP-OR-HOSTNAME")
+def main(hostname: str) -> None:
     """
-    Prints the information about the IP block that the given IP is a part of.
+    Prints the information about the AWS IP block that an IP address belongs to.
+
+    If an IP address is provided it is looked up directly; if a name is provided,
+    a DNS lookup will be performed and all the IPs that the name resolves to will
+    be looked up and reported on.
+
+    Example:
+    
+        aws-ip-info status.aws.amazon.com
     """
-
-    resolved_ip = socket.gethostbyname(ip_address)
-    click.echo(f"Matches for {format_ip(ip_address, resolved_ip)}:")
-
-    try:
-        network = ipaddress.ip_network(resolved_ip, strict=False)
-    except ValueError:
-        click.echo(f"{ip_address!r} is not a valid IP address", err=True)
-        return
 
     try:
         ip_data = requests.get(_AWS_IP_URL).json()
@@ -49,24 +88,38 @@ def main(ip_address: str) -> None:
         return
 
     try:
-        prefix_list = ip_data[_KEY_MAP[type(network)]['list']]
-    except KeyError:
-        click.echo(f"{resolved_ip!r} is not a supported address type.", err=True)
+        resolved_sockets = socket.getaddrinfo(hostname, 443)
+    except (ValueError, socket.gaierror):
+        click.echo(f"{hostname!r} is not a valid hostname", err=True)
         return
-    
-    matches = []
-    with click.progressbar(prefix_list) as prefix_bar:
+
+    unique_ips = {socket_info[-1][0] for socket_info in resolved_sockets}
+    resolved_ips = [IpLookup(addr) for addr in unique_ips]
+    all_aws_prefixes = ip_data["prefixes"] + ip_data["ipv6_prefixes"]
+
+    click.echo(f"Finding matches for {format_ip(hostname, unique_ips)}")
+    with click.progressbar(all_aws_prefixes) as prefix_bar:
         for prefix in prefix_bar:
-            prefix_net = ipaddress.ip_network(prefix[_KEY_MAP[type(network)]['net']])
-            if network.subnet_of(prefix_net):
-                matches.append(prefix)
+            for ip_lookup in resolved_ips:
+                ip_lookup.add_if_match(prefix)
 
-    if not matches:
-        click.echo(f"{format_ip(ip_address, resolved_ip)} is not an AWS IP address.", err=True)
+    headers = [
+        "Address",
+        "Prefix",
+        "Region(s)",
+        "Services(s)",
+        "Network Border Group(s)",
+    ]
+    results = sorted(
+        [row for match in resolved_ips if (row := match.create_table_row())],
+        key=lambda row: row[0],
+    )
+    if not results:
+        click.echo(f"{format_ip(hostname, unique_ips)} is not an AWS address", err=True)
         return
 
-    click.echo(json.dumps(matches, indent=4))
+    click.echo(tabulate.tabulate(results, headers=headers, tablefmt="psql"))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
