@@ -2,7 +2,7 @@
 
 import ipaddress
 import socket
-from typing import Any
+from typing import Any, Iterable
 
 import click
 import requests
@@ -11,7 +11,8 @@ import tabulate
 _AWS_IP_URL = "https://ip-ranges.amazonaws.com/ip-ranges.json"
 
 
-def format_ip(input: str, resolved: list[str]):
+def format_ip(input: str, resolved: Iterable[str]):
+    resolved = sorted(list(resolved))
     if [input] == resolved:
         return input
     return f"{input} ({','.join(resolved)})"
@@ -39,7 +40,7 @@ class IpLookup:
             self._add_match(prefix)
 
     @property
-    def prefix_key(self) -> bool:
+    def prefix_key(self) -> str:
         if self.is_v6:
             return "ipv6_prefix"
         return "ip_prefix"
