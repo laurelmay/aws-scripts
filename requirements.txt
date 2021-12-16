@@ -8,3 +8,5 @@ pygit2
 black
 boto3-stubs[all]
 pyre-check
+
+-e .

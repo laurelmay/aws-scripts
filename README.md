@@ -10,7 +10,8 @@ Install dependencies from the `requirements.txt` file.
 ## Scripts
 
 There are a variety of scripts in this repository and there isn't really a
-consistent structure to them.
+consistent structure to them. All scripts provide a `--help` option with
+detailed information on the options available for that script.
 
 ### all_open_prs.py
 
@@ -98,3 +99,10 @@ This may help determine dependencies between CloudFormation stacks.
 
 This project is licensed under the terms of the MIT License. For more information,
 see the [LICENSE](LICENSE) file.
+
+## TODO
+
+It is an eventual goal to rework the packaging for this script to leverage `click`'s
+command groups feature and create a cohesive CLI and a package that can meaningfully
+be installed and used. In the interim, create a virtualenv in which all dependencies
+from `requirement.txt` can be used.
