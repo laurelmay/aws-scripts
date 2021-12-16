@@ -43,6 +43,7 @@ def main(region: str, property_name: str, resource_name_filter: Optional[str]) -
     except IOError:
         click.echo(f"Unable to fetch/parse the CloudFormation spec for {region}", err=True)
         return
+    click.echo(f"Retrieved CloudFormation spec v{cfn_spec['ResourceSpecificationVersion']}")
 
     resources = cfn_spec['ResourceTypes']
     support_tagging = []
