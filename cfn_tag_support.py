@@ -12,19 +12,17 @@ def specification_download_url(region: str) -> str:
 
 @click.command("cfn-tag-support")
 @click.option(
-    '--region',
+    "--region",
     default="us-east-1",
     help="The AWS region to check support for",
 )
 @click.option(
-    '--property-name',
-    default='Tags',
-    help="The name of the property to search for"
+    "--property-name", default="Tags", help="The name of the property to search for"
 )
 @click.option(
-    '--resource-name-filter',
+    "--resource-name-filter",
     required=False,
-    help="The filter to apply to resource names, checks if the input is included in the resource name"
+    help="The filter to apply to resource names, checks if the input is included in the resource name",
 )
 def main(region: str, property_name: str, resource_name_filter: Optional[str]) -> None:
     """
@@ -41,21 +39,26 @@ def main(region: str, property_name: str, resource_name_filter: Optional[str]) -
         click.echo(f"Downloading CloudFormation spec for {region}")
         cfn_spec = requests.get(specification_download_url(region)).json()
     except IOError:
-        click.echo(f"Unable to fetch/parse the CloudFormation spec for {region}", err=True)
+        click.echo(
+            f"Unable to fetch/parse the CloudFormation spec for {region}", err=True
+        )
         return
-    click.echo(f"Retrieved CloudFormation spec v{cfn_spec['ResourceSpecificationVersion']}")
 
-    resources = cfn_spec['ResourceTypes']
-    support_tagging = []
+    click.echo(
+        f"Retrieved CloudFormation spec v{cfn_spec['ResourceSpecificationVersion']} for {region}"
+    )
+    support_tagging = [
+        name
+        for name, data in cfn_spec["ResourceTypes"].items()
+        if property_name in data["Properties"] and resource_name_filter in name
+    ]
 
-    support_tagging = [name for name, data in resources.items() if property_name in data['Properties']]
-    support_tagging = [resource for resource in support_tagging if resource_name_filter in resource]
-
+    # Only use a pager if there's quite a bit of output
     if len(support_tagging) > 15:
         echo = click.echo_via_pager
     else:
         echo = click.echo
-    echo('\n'.join(sorted(support_tagging)))
+    echo("\n".join(sorted(support_tagging)))
 
 
 if __name__ == "__main__":
