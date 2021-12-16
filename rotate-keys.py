@@ -76,7 +76,7 @@ def get_iam_resource(profile: str) -> IAMServiceResource:
 
 def get_sts_client(profile: str) -> STSClient:
     session = boto3.Session(profile_name=profile)
-    return session.resource("sts")
+    return session.client("sts")
 
 
 @click.command("rotate-keys")
@@ -84,6 +84,7 @@ def get_sts_client(profile: str) -> STSClient:
     "--profile",
     "-p",
     required=True,
+    envvar="AWS_PROFILE",
     default="default",
     help="Profile name",
 )

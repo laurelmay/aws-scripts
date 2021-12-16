@@ -4,9 +4,9 @@ tabulate
 click
 requests
 pygit2
+pyyaml
 
 black
 boto3-stubs[all]
 pyre-check
 
--e .
