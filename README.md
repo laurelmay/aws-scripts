@@ -32,6 +32,13 @@ via the CodeCommit API, clones the repositories from BitBucket, and mirrors them
 to CodeCommit. This should be used for a single migration; it does not support
 continuous synchronization.
 
+### cfn_params.py
+
+This helps in the preparation and formatting of parameters for a CloudFormation
+template; either viewing them in a table or emitting a JSON array that can have
+the `ParameterValue`s filled in and then passed to a CreateStack (or similar)
+action.
+
 ### cfn_tag_support.py
 
 This a script to parse the
