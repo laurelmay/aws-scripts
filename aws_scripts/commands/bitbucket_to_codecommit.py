@@ -8,9 +8,8 @@ repositories.
 import atexit
 import datetime
 import os.path
-import sys
 import tempfile
-from typing import List, Dict, Optional, Type, TypedDict, Literal
+from typing import List, Dict, Optional, TypedDict, Literal
 
 import boto3
 import click
@@ -21,6 +20,9 @@ import pygit2
 import requests
 import tabulate
 from botocore.exceptions import ClientError
+
+from aws_scripts.options import profile_option
+from aws_scripts.session import create_session
 
 
 class BitBucketSelfLink(TypedDict):
@@ -186,13 +188,6 @@ class BitBucketApiConnection:
         return repos
 
 
-def create_boto_session(name: str) -> boto3.Session:
-    session_args = {}
-    if name:
-        session_args["profile_name"] = name
-    return boto3.Session(**session_args)
-
-
 def build_grc_url(profile: str, repo: str) -> str:
     if profile:
         return f"codecommit://{profile}@{repo}"
@@ -221,7 +216,7 @@ def create_codecommit_repo(
 
 
 @click.command("bitbucket-to-codecommit")
-@click.option("-p", "--profile", help="The AWS CLI profile to use")
+@profile_option
 @click.option(
     "-d",
     "--bitbucket-domain",
@@ -287,7 +282,7 @@ def main(
     )
     click.confirm("Copy these repos to CodeCommit", abort=True)
 
-    session = create_boto_session(profile)
+    session = create_session(profile)
     codecommit = session.client("codecommit")
 
     iam = session.resource("iam")

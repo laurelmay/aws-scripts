@@ -13,7 +13,13 @@ import boto3
 import click
 import tabulate
 from botocore.exceptions import ClientError
-from mypy_boto3_cloudformation.service_resource import Stack, CloudFormationServiceResource
+from mypy_boto3_cloudformation.service_resource import (
+    Stack,
+    CloudFormationServiceResource,
+)
+
+from aws_scripts.options import profile_option
+from aws_scripts.session import create_session
 
 
 def is_nested(stack: Stack) -> bool:
@@ -32,7 +38,11 @@ def changed_time(stack: Stack) -> datetime.datetime:
     return stack.creation_time
 
 
-def delete_sweep(cfn: CloudFormationServiceResource, stacks: List[Stack], role_arn: Optional[str] = None) -> List[Stack]:
+def delete_sweep(
+    cfn: CloudFormationServiceResource,
+    stacks: List[Stack],
+    role_arn: Optional[str] = None,
+) -> List[Stack]:
     """
     Execute a delete on all stacks in the CREATE_COMPLETE status
     """
@@ -49,68 +59,63 @@ def delete_sweep(cfn: CloudFormationServiceResource, stacks: List[Stack], role_a
     stacks = [
         stack
         for stack in stacks
-        if stack.stack_status not in ['DELETE_IN_PROGRESS', 'DELETE_COMPLETE']
+        if stack.stack_status not in ["DELETE_IN_PROGRESS", "DELETE_COMPLETE"]
     ]
 
     for stack in stacks:
         click.echo(f"Attempting deletion on {stack.name}")
         try:
             cfn.meta.client.update_termination_protection(
-                EnableTerminationProtection=False,
-                StackName=stack.stack_name
+                EnableTerminationProtection=False, StackName=stack.stack_name
             )
         except ClientError:
             click.echo(
                 f"Unable to update termination protection for {stack.stack_name}",
-                err=True
+                err=True,
             )
         delete_args = {}
         if role_arn:
-            delete_args['RoleARN'] = role_arn
+            delete_args["RoleARN"] = role_arn
         stack.delete(**delete_args)
 
     return stacks
 
 
-@click.command('stack-destroy')
+@click.command("cfn-stack-destroy")
+@profile_option
 @click.option(
-    '--profile',
-    '-p',
-    required=True,
-    default='default',
-    help='The AWS CLI profile to use',
-)
-@click.option(
-    '--stack-state',
-    '-s',
+    "--stack-state",
+    "-s",
     required=False,
     help="The stack state to filter on",
 )
 @click.option(
-    '--max-sweeps',
+    "--max-sweeps",
     type=click.INT,
     required=False,
     help="The maximum number of delete sweeps to attempt",
 )
 @click.option(
-    '--sweep-time',
+    "--sweep-time",
     type=click.INT,
     default=30,
-    help="The amount of time to wait between sweeps"
+    help="The amount of time to wait between sweeps",
 )
+@click.option("--ignore", "-i", multiple=True, help="Stacks to ignore")
 @click.option(
-    '--ignore',
-    '-i',
-    multiple=True,
-    help="Stacks to ignore"
-)
-@click.option(
-    '--role-arn',
-    '-r',
+    "--role-arn",
+    "-r",
     default=None,
-    help="The ARN of the role to use to delete the stacks"
+    help="The ARN of the role to use to delete the stacks",
 )
-def main(profile: str, stack_state: str, max_sweeps: int, sweep_time: int, ignore: List[str], role_arn: str) -> None:
+def main(
+    profile: str,
+    stack_state: str,
+    max_sweeps: int,
+    sweep_time: int,
+    ignore: List[str],
+    role_arn: str,
+) -> None:
     """
     Assists in automating the deletion of all CloudFormation stacks in an account.
     This only initiates deletion for all stacks, it does not wait for them all to
@@ -118,19 +123,17 @@ def main(profile: str, stack_state: str, max_sweeps: int, sweep_time: int, ignor
     errors at the end of a successful execution of this script.
     """
 
-    session = boto3.Session(profile_name=profile)
-    cfn = session.resource('cloudformation')
+    session = create_session(profile_name=profile)
+    cfn = session.resource("cloudformation")
 
     stacks = [
-        stack for stack in cfn.stacks.all()
+        stack
+        for stack in cfn.stacks.all()
         if correct_state(stack, stack_state) and not is_nested(stack)
     ]
-    stacks = [
-        stack for stack in stacks
-        if stack.name not in ignore
-    ]
+    stacks = [stack for stack in stacks if stack.name not in ignore]
     stacks.sort(key=changed_time, reverse=True)
-    headers = ['Stack Name', 'Last Changed Time', 'Stack Status']
+    headers = ["Stack Name", "Last Changed Time", "Stack Status"]
     table = []
     for stack in stacks:
         last_changed = changed_time(stack).strftime("%Y-%m-%d %H:%M:%S")

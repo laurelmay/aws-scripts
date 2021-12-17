@@ -3,3 +3,6 @@
 .python-version
 .watchmanconfig
 .pyre_configuration
+*.egg-info/
+__pycache__
+*.pyc

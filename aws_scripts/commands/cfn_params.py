@@ -46,7 +46,7 @@ def _multi_constructor(loader, tag_suffix, node):
 
 def _construct_getatt(node):
     if isinstance(node.value, str):
-        resource, _, attribute = node.value.partition('.')
+        resource, _, attribute = node.value.partition(".")
         return [resource, attribute]
     if isinstance(node.value, list):
         return [s.value for s in node.value]
@@ -60,17 +60,24 @@ def parse_template(template_file):
     return yaml.load(template_file, CfnYamlLoader)
 
 
-def parse_parameters(parameter_data: Dict[str, Dict[str, str]], defaults=False) -> List[Tuple[str, str, str, str]]:
+def parse_parameters(
+    parameter_data: Dict[str, Dict[str, str]], defaults=False
+) -> List[Tuple[str, str, str, str]]:
     formatted_parameters = []
     for name, data in parameter_data.items():
-        fields = (name, data.get('Type', 'String'), data.get('Description', ''), data.get('Default', ''))
-        if defaults or not data.get('Default'):
+        fields = (
+            name,
+            data.get("Type", "String"),
+            data.get("Description", ""),
+            data.get("Default", ""),
+        )
+        if defaults or not data.get("Default"):
             formatted_parameters.append(fields)
     return formatted_parameters
 
 
 def create_table(parameter_data):
-    table_headers = ('Name', 'Type', 'Description', 'Default')
+    table_headers = ("Name", "Type", "Description", "Default")
     table = tabulate.tabulate(parameter_data, headers=table_headers, tablefmt="psql")
     return table
 
@@ -78,18 +85,19 @@ def create_table(parameter_data):
 def create_json(parameter_data):
     data = []
     for name, _type, _description, default in parameter_data:
-        data.append({'ParameterKey': name, 'ParameterValue': default})
+        data.append({"ParameterKey": name, "ParameterValue": default})
     return json.dumps(data, indent=4)
+
 
 @click.command(name="cfn-params")
 @click.option(
-    '--format',
-    type=click.Choice(['table', 'json']),
-    default='table',
-    help="The output format to use"
+    "--format",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="The output format to use",
 )
 @click.argument(
-    'template-file',
+    "template-file",
     type=click.File(),
 )
 def main(template_file, format):
@@ -100,10 +108,10 @@ def main(template_file, format):
     The Table format prints the parameter name, description, type, and default.
     The JSON format output is the same as the expected schema for providing
     parameter values to a CreateStack (or similar) command; the default (if there
-    is one) will be used to pre-populate the ParameterValue field. 
+    is one) will be used to pre-populate the ParameterValue field.
     """
     template = parse_template(template_file)
-    params = template.get('Parameters', [])
+    params = template.get("Parameters", [])
     parsed = parse_parameters(params)
     if format == "table":
         output = create_table(parsed)
@@ -112,5 +120,5 @@ def main(template_file, format):
     click.echo(output)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

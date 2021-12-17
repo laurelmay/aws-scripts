@@ -67,7 +67,7 @@ class IpLookup:
         ]
 
 
-@click.command("aws-ip-info")
+@click.command("ip-info")
 @click.argument("hostname", metavar="IP-OR-HOSTNAME")
 def main(hostname: str) -> None:
     """
@@ -76,10 +76,6 @@ def main(hostname: str) -> None:
     If an IP address is provided it is looked up directly; if a name is provided,
     a DNS lookup will be performed and all the IPs that the name resolves to will
     be looked up and reported on.
-
-    Example:
-    
-        aws-ip-info status.aws.amazon.com
     """
 
     try:

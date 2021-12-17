@@ -1,11 +1,15 @@
 import json
-from typing import  TextIO
+from typing import TextIO
 
 import boto3
 import click
 
+from aws_scripts.options import profile_option
+from aws_scripts.session import create_session
+
 
 @click.command("dynamodb-item-import")
+@profile_option
 @click.option(
     "--item-file",
     "-i",
@@ -15,8 +19,12 @@ import click
 @click.option(
     "--table-name", "-t", type=click.STRING, help="The name of the DynamoDB table"
 )
-def main(item_file: TextIO, table_name: str) -> None:
-    client = boto3.client("dynamodb")
+def main(profile: str, item_file: TextIO, table_name: str) -> None:
+    """
+    Import data into a given DynamoDB table
+    """
+
+    client = create_session(profile_name=profile).client("dynamodb")
     items = json.load(item_file)
     for item in items:
         client.put_item(TableName=table_name, Item=item)

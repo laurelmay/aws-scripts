@@ -8,11 +8,18 @@ import configparser
 import os
 from typing import Iterable, List, Optional
 
-import boto3
 import click
 
 from mypy_boto3_sts.client import STSClient
-from mypy_boto3_iam.service_resource import AccessKey, IAMServiceResource, User, AccessKeyPair
+from mypy_boto3_iam.service_resource import (
+    AccessKey,
+    IAMServiceResource,
+    User,
+    AccessKeyPair,
+)
+
+from aws_scripts.options import profile_option
+from aws_scripts.session import create_session
 
 
 def get_user(users: Iterable[User], arn: str) -> Optional[User]:
@@ -70,29 +77,24 @@ def create_pair(
 
 
 def get_iam_resource(profile: str) -> IAMServiceResource:
-    session = boto3.Session(profile_name=profile)
+    session = create_session(profile_name=profile)
     return session.resource("iam")
 
 
 def get_sts_client(profile: str) -> STSClient:
-    session = boto3.Session(profile_name=profile)
+    session = create_session(profile_name=profile)
     return session.client("sts")
 
 
 @click.command("rotate-keys")
-@click.option(
-    "--profile",
-    "-p",
-    required=True,
-    envvar="AWS_PROFILE",
-    default="default",
-    help="Profile name",
-)
+@profile_option
 def main(profile: str) -> None:
     """
-    Rotate access keys for an AWS IAM user. A new access key will be created,
-    optionally saved to the ~/.aws/credentials file, and then old access keys
-    will be optionally deleted.
+    Rotate access keys for an AWS IAM user.
+    
+    A new access key will be created, optionally saved to the
+    ~/.aws/credentials file, and then old access keys will be optionally
+    deleted.
     """
 
     iam = get_iam_resource(profile)

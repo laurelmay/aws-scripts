@@ -5,12 +5,10 @@ Handles the creation of a new AWS GovCloud account.
 """
 
 import json
-import sys
 import time
-from typing import List, Literal, Optional
+from typing import List, Literal
 
 import boto3
-import botocore
 import click
 from botocore.exceptions import ClientError
 from mypy_boto3_organizations.client import OrganizationsClient
@@ -24,6 +22,9 @@ from mypy_boto3_organizations.type_defs import (
     CreateAccountStatusTypeDef,
     TagTypeDef,
 )
+
+from aws_scripts.options import profile_option
+from aws_scripts.session import create_session
 
 
 def create_account(
@@ -80,13 +81,18 @@ def wait_for_creation(
     return state == "SUCCEEDED"
 
 
-def tag_commercial_account(client: OrganizationsClient, create_account_request_id: str) -> None:
+def tag_commercial_account(
+    client: OrganizationsClient, create_account_request_id: str
+) -> None:
     status_info = get_account_status(client, create_account_request_id)
-    tag_data: List[TagTypeDef] = [{"Key": "GovCloudAccountId", "Value": status_info["GovCloudAccountId"]}]
+    tag_data: List[TagTypeDef] = [
+        {"Key": "GovCloudAccountId", "Value": status_info["GovCloudAccountId"]}
+    ]
     client.tag_resource(ResourceId=status_info["AccountId"], Tags=tag_data)
 
 
 @click.command("create-govcloud-account")
+@profile_option
 @click.option(
     "--account-name", required=True, help="The friendly name of the new account"
 )
@@ -102,8 +108,16 @@ def tag_commercial_account(client: OrganizationsClient, create_account_request_i
     default="ALLOW",
     help="Allow IAM users in the linked commercial account to access billing.",
 )
-def main(account_name: str, email: str, iam_user_access_to_billing: IAMUserAccessToBillingType) -> None:
-    client = boto3.client("organizations")
+def main(
+    profile: str,
+    account_name: str,
+    email: str,
+    iam_user_access_to_billing: IAMUserAccessToBillingType,
+) -> None:
+    """
+    Create an AWS GovCloud (US) account via Organizations.
+    """
+    client = create_session(profile).client("organizations")
     car_response = create_account(
         client, account_name, email, iam_user_access_to_billing
     )

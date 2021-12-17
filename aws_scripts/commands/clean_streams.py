@@ -8,28 +8,19 @@ end, confirmation is request before performing the deletion.
 
 from datetime import datetime
 
-import boto3
 import click
 import tabulate
 
+from aws_scripts.options import profile_option
+from aws_scripts.session import create_session
 
-@click.command('clean-streams')
+
+@click.command("clean-streams")
+@profile_option
+@click.option("--log-group", "-g", required=True, help="Log group name")
 @click.option(
-    '--profile',
-    '-p',
-    required=True,
-    default='default',
-    help='Profile name',
-)
-@click.option(
-    '--log-group',
-    '-g',
-    required=True,
-    help="Log group name"
-)
-@click.option(
-    '--page-size',
-    '-s',
+    "--page-size",
+    "-s",
     type=click.INT,
     default=50,
     help="The number of streams to prompt for at a time",
@@ -43,33 +34,37 @@ def main(profile: str, log_group: str, page_size: str) -> None:
     each batch, rather than having to accept all streams in bulk.
     """
 
-    session = boto3.Session(profile_name=profile)
-    client = session.client('logs')
+    session = create_session(profile_name=profile)
+    client = session.client("logs")
 
     to_delete = []
-    paginator = client.get_paginator('describe_log_streams')
+    paginator = client.get_paginator("describe_log_streams")
     for page in paginator.paginate(
-            logGroupName=log_group,
-            orderBy='LastEventTime',
-            descending=False,
-            PaginationConfig={
-                'PageSize': page_size
-            }
+        logGroupName=log_group,
+        orderBy="LastEventTime",
+        descending=False,
+        PaginationConfig={"PageSize": page_size},
     ):
-        streams = page['logStreams']
+        streams = page["logStreams"]
         table = []
         for idx, stream in enumerate(streams):
-            stream_name = stream['logStreamName']
+            stream_name = stream["logStreamName"]
             try:
-                last_event = datetime.fromtimestamp(stream['lastEventTimestamp']/1000.0)
+                last_event = datetime.fromtimestamp(
+                    stream["lastEventTimestamp"] / 1000.0
+                )
             except KeyError as e:
-                if e.args[0] == 'lastEventTimestamp':
-                    last_event = ''
+                if e.args[0] == "lastEventTimestamp":
+                    last_event = ""
                 else:
                     raise
             table.append([idx, stream_name, last_event])
         click.clear()
-        print(tabulate.tabulate(table, headers=["Index", "Stream Name", "Last Event Timestamp"]))
+        print(
+            tabulate.tabulate(
+                table, headers=["Index", "Stream Name", "Last Event Timestamp"]
+            )
+        )
         delete = click.confirm("Delete all of the above")
         if delete:
             to_delete += [line[1] for line in table]
@@ -86,5 +81,5 @@ def main(profile: str, log_group: str, page_size: str) -> None:
                 client.delete_log_stream(logGroupName=log_group, logStreamName=stream)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
