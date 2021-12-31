@@ -112,10 +112,10 @@ def main(account_name: str, email: str, iam_user_access_to_billing: IAMUserAcces
     if not success:
         print("Account creation did not complete successfully in time")
         print(f"Request id: {car_id}")
-        print(json.dumps(get_account_status(client, car_id), indent=4))
+        print(json.dumps(get_account_status(client, car_id), indent=4, default=str))
     tag_commercial_account(client, car_id)
     print("Account creation completed successfully.")
-    print(json.dumps(get_account_status(client, car_id), indent=4))
+    print(json.dumps(get_account_status(client, car_id), indent=4, default=str))
 
 
 if __name__ == "__main__":
