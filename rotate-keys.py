@@ -6,26 +6,36 @@ Rotate access keys.
 
 import configparser
 import os
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
 import boto3
 import click
+from mypy_boto3_iam.client import IAMClient
+from mypy_boto3_iam.type_defs import UserTypeDef, AccessKeyTypeDef
 
-from mypy_boto3_sts.client import STSClient
-from mypy_boto3_iam.service_resource import AccessKey, IAMServiceResource, User, AccessKeyPair
+def user_access_keys(iam: IAMClient, user: str) -> list[AccessKeyTypeDef]:
+    """
+    List all IAM access keys for the given user.
+    """
+    keys = []
+    paginator = iam.get_paginator('list_access_keys')
+    for page in paginator.paginate(UserName=user):
+        keys.extend(page["AccessKeyMetadata"])
+    return keys
 
 
-def get_user(users: Iterable[User], arn: str) -> Optional[User]:
-    for user in users:
-        if user.arn == arn:
-            return user
-    return None
+def delete_key(iam: IAMClient, access_key_id: str) -> str:
+    """
+    Delete the given IAM Access Key.
+    """
+    iam.delete_access_key(AccessKeyId=access_key_id)
+    return access_key_id
 
 
-def delete_keys(message: str, existing_keys: List[AccessKey]) -> bool:
+def delete_keys(iam: IAMClient, message: str, existing_keys: List[AccessKeyTypeDef]) -> bool:
     click.echo(message)
     for key in existing_keys:
-        click.echo(f"  {key.access_key_id} (Created: {key.create_date})")
+        click.echo(f"  {key['AccessKeyId']} (Created: {key.get('CreateDate', 'Unknown')})")
 
     delete_old_keys = click.confirm(
         "Do you want to delete the above access key pairs", prompt_suffix="? "
@@ -33,50 +43,45 @@ def delete_keys(message: str, existing_keys: List[AccessKey]) -> bool:
 
     if delete_old_keys:
         for key in existing_keys:
-            click.echo(f"Deleting: {key.access_key_id}")
-            key.delete()
+            click.echo(f"Deleting: {key['AccessKeyId']}")
+            delete_key(iam, key["AccessKeyId"])
 
     return delete_old_keys
 
 
-def write_config(profile: str, key_pair: AccessKeyPair) -> None:
+def write_config(profile: str, key_pair: AccessKeyTypeDef) -> None:
     config_path = os.path.expanduser("~/.aws/credentials")
     config = configparser.ConfigParser()
     config.read(config_path)
 
-    config[profile]["aws_access_key_id"] = key_pair.access_key_id
-    config[profile]["aws_secret_access_key"] = key_pair.secret_access_key
+    config[profile]["aws_access_key_id"] = key_pair["AccessKeyId"]
+    config[profile]["aws_secret_access_key"] = key_pair["SecretAccessKey"]
 
     with open(config_path, "w") as config_file:
         config.write(config_file)
 
 
 def create_pair(
-    iam: IAMServiceResource,
-    user: User,
-    existing_keys: Optional[List[AccessKey]] = None,
-) -> Optional[AccessKeyPair]:
+    iam: IAMClient,
+    user: UserTypeDef,
+    existing_keys: Optional[List[AccessKeyTypeDef]] = None,
+) -> Optional[AccessKeyTypeDef]:
     if existing_keys is None:
-        existing_keys = list(user.access_keys.all())
+        existing_keys = user_access_keys(iam, user["UserName"])
 
     try:
-        return user.create_access_key_pair()
-    except iam.meta.client.exceptions.LimitExceededException:
+        return iam.create_access_key(UserName=user["UserName"])["AccessKey"]
+    except iam.exceptions.LimitExceededException:
         msg = "You already have two IAM access keys, the max allowed by AWS:"
-        if delete_keys(msg, existing_keys):
+        if delete_keys(iam, msg, existing_keys):
             return create_pair(iam, user, existing_keys)
 
     return None
 
 
-def get_iam_resource(profile: str) -> IAMServiceResource:
+def get_iam_resource(profile: str) -> IAMClient:
     session = boto3.Session(profile_name=profile)
-    return session.resource("iam")
-
-
-def get_sts_client(profile: str) -> STSClient:
-    session = boto3.Session(profile_name=profile)
-    return session.client("sts")
+    return session.client("iam")
 
 
 @click.command("rotate-keys")
@@ -96,10 +101,8 @@ def main(profile: str) -> None:
     """
 
     iam = get_iam_resource(profile)
-    sts = get_sts_client(profile)
 
-    user_arn = sts.get_caller_identity()["Arn"]
-    user = get_user(iam.users.all(), user_arn)
+    user = iam.get_user()["User"]
 
     if not user:
         print("Unable to get user.")
@@ -111,8 +114,8 @@ def main(profile: str) -> None:
 
     click.echo("The following will be written:")
     click.echo(f"[{profile}]")
-    click.echo(f"aws_secret_key_id = {key_pair.access_key_id}")
-    click.echo(f"aws_secret_access_key = {key_pair.secret_access_key}")
+    click.echo(f"aws_secret_key_id = {key_pair['AccessKeyId']}")
+    click.echo(f"aws_secret_access_key = {key_pair['SecretAccessKey']}")
     click.echo()
 
     write = click.confirm(
@@ -122,24 +125,17 @@ def main(profile: str) -> None:
     if write:
         write_config(profile, key_pair)
     else:
-        delete_new = click.confirm(
-            f"Do you want to delete the newly created key",
-            default=False,
-            prompt_suffix="? ",
-        )
-        if delete_new:
-            key_pair.delete()
-        return
+        delete_keys(iam, 'The config was not updated. You may want to delete the newly create key', [key_pair])
 
     iam = get_iam_resource(profile)
 
     existing_keys = [
         key
-        for key in user.access_keys.all()
-        if key.access_key_id != key_pair.access_key_id
+        for key in user_access_keys(iam, user["UserName"])
+        if key["AccessKeyId"] != key_pair["AccessKeyId"]
     ]
     if existing_keys:
-        delete_keys("Old access key pairs:", existing_keys)
+        delete_keys(iam, "Old access key pairs:", existing_keys)
 
 
 if __name__ == "__main__":
