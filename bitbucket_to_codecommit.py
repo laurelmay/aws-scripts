@@ -8,15 +8,14 @@ repositories.
 import atexit
 import datetime
 import os.path
-import sys
 import tempfile
-from typing import List, Dict, Optional, Type, TypedDict, Literal
+from typing import List, Optional, TypedDict, Literal
 
 import boto3
 import click
 from mypy_boto3_codecommit.client import CodeCommitClient
 from mypy_boto3_codecommit.type_defs import RepositoryMetadataTypeDef
-from mypy_boto3_iam.service_resource import User
+from mypy_boto3_iam.type_defs import UserTypeDef
 import pygit2
 import requests
 import tabulate
@@ -93,7 +92,7 @@ class RepositoryMigration:
 
     def clone(
         self,
-        parent_dir: Optional[str] = None,
+        parent_dir: str,
         callbacks: Optional[pygit2.RemoteCallbacks] = None,
     ) -> pygit2.Repository:
         repo_path = os.path.join(parent_dir, f"{self.name}.git")
@@ -200,7 +199,7 @@ def build_grc_url(profile: str, repo: str) -> str:
 
 
 def create_codecommit_repo(
-    codecommit: CodeCommitClient, name: str, description: str, user: User
+    codecommit: CodeCommitClient, name: str, description: str, user: UserTypeDef
 ) -> RepositoryMetadataTypeDef:
     try:
         return codecommit.create_repository(
@@ -211,7 +210,7 @@ def create_codecommit_repo(
                 "MigrationDateTime": datetime.datetime.now().strftime(
                     "%Y-%m-%d %H:%M:%S"
                 ),
-                "MigratedBy": user.user_name,
+                "MigratedBy": user["UserName"],
             },
         )["repositoryMetadata"]
     except ClientError as err:
@@ -290,13 +289,13 @@ def main(
     session = create_boto_session(profile)
     codecommit = session.client("codecommit")
 
-    iam = session.resource("iam")
-    user = iam.CurrentUser().user
+    iam = session.client("iam")
+    user = iam.get_user()["User"]
 
     clone_creds = pygit2.UserPass(username, password)
     clone_creds_callback = pygit2.RemoteCallbacks(credentials=clone_creds)
     codecommit_creds = iam.create_service_specific_credential(
-        UserName=user.user_name, ServiceName="codecommit.amazonaws.com"
+        UserName=user["UserName"], ServiceName="codecommit.amazonaws.com"
     )["ServiceSpecificCredential"]
     push_creds = pygit2.UserPass(
         codecommit_creds["ServiceUserName"], codecommit_creds["ServicePassword"]
@@ -305,7 +304,7 @@ def main(
 
     atexit.register(
         iam.delete_service_specific_credential,
-        UserName=user.user_name,
+        UserName=user["UserName"],
         ServiceSpecificCredentialId=codecommit_creds["ServiceSpecificCredentialId"],
     )
 
