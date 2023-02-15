@@ -7,41 +7,42 @@ stacks in an account, reguardless of termination protection
 
 import datetime
 import time
-from typing import List, Optional
+from typing import Generator, Optional
 
 import boto3
 import click
 import tabulate
 from botocore.exceptions import ClientError
-from mypy_boto3_cloudformation.service_resource import Stack, CloudFormationServiceResource
+from mypy_boto3_cloudformation import CloudFormationClient
+from mypy_boto3_cloudformation.type_defs import StackTypeDef 
 
 
-def is_nested(stack: Stack) -> bool:
-    return bool(stack.parent_id and (stack.parent_id != stack.stack_id))
+def is_nested(stack: StackTypeDef) -> bool:
+    return bool(stack.get('ParentId') and (stack.get('ParentId') != stack.get('StackId')))
 
 
-def correct_state(stack: Stack, state: str) -> bool:
-    return (not state) or stack.stack_status == state
+def correct_state(stack: StackTypeDef, state: str) -> bool:
+    return (not state) or stack['StackStatus'] == state
 
 
-def changed_time(stack: Stack) -> datetime.datetime:
-    if stack.deletion_time:
-        return stack.deletion_time
-    if stack.last_updated_time:
-        return stack.last_updated_time
-    return stack.creation_time
+def changed_time(stack: StackTypeDef) -> datetime.datetime:
+    if deletion_time := stack.get('DeletionTime'):
+        return deletion_time
+    if last_updated := stack.get('LastUpdatedTime'):
+        return last_updated
+    return stack.get('CreationTime')
 
 
-def delete_sweep(cfn: CloudFormationServiceResource, stacks: List[Stack], role_arn: Optional[str] = None) -> List[Stack]:
+def delete_sweep(cfn: CloudFormationClient, stacks: list[StackTypeDef], role_arn: Optional[str] = None) -> list[StackTypeDef]:
     """
     Execute a delete on all stacks in the CREATE_COMPLETE status
     """
 
     for stack in stacks[:]:
         try:
-            stack.reload()
+            stack = cfn.describe_stacks(StackName=stack['StackId'])['Stacks'][0]
         except ClientError as err:
-            if f"{stack.name} does not exist" in str(err):
+            if f"{stack['StackName']} does not exist" in str(err):
                 stacks.remove(stack)
             else:
                 raise
@@ -49,27 +50,33 @@ def delete_sweep(cfn: CloudFormationServiceResource, stacks: List[Stack], role_a
     stacks = [
         stack
         for stack in stacks
-        if stack.stack_status not in ['DELETE_IN_PROGRESS', 'DELETE_COMPLETE']
+        if stack['StackStatus'] not in ['DELETE_IN_PROGRESS', 'DELETE_COMPLETE']
     ]
 
     for stack in stacks:
-        click.echo(f"Attempting deletion on {stack.name}")
+        click.echo(f"Attempting deletion on {stack['StackName']}")
         try:
-            cfn.meta.client.update_termination_protection(
+            cfn.update_termination_protection(
                 EnableTerminationProtection=False,
-                StackName=stack.stack_name
+                StackName=stack['StackId']
             )
         except ClientError:
             click.echo(
-                f"Unable to update termination protection for {stack.stack_name}",
+                f"Unable to update termination protection for {stack['StackName']}",
                 err=True
             )
-        delete_args = {}
+        delete_args = {"StackName": stack['StackName']}
         if role_arn:
             delete_args['RoleARN'] = role_arn
-        stack.delete(**delete_args)
+        cfn.delete_stack(**delete_args)
 
     return stacks
+
+
+def get_all_stacks(cfn: CloudFormationClient) -> Generator[StackTypeDef, None, None]:
+    paginator = cfn.get_paginator('describe_stacks')
+    for page in paginator.paginate():
+        yield from page['Stacks']
 
 
 @click.command('stack-destroy')
@@ -110,7 +117,7 @@ def delete_sweep(cfn: CloudFormationServiceResource, stacks: List[Stack], role_a
     default=None,
     help="The ARN of the role to use to delete the stacks"
 )
-def main(profile: str, stack_state: str, max_sweeps: int, sweep_time: int, ignore: List[str], role_arn: str) -> None:
+def main(profile: str, stack_state: str, max_sweeps: int, sweep_time: int, ignore: list[str], role_arn: str) -> None:
     """
     Assists in automating the deletion of all CloudFormation stacks in an account.
     This only initiates deletion for all stacks, it does not wait for them all to
@@ -119,22 +126,22 @@ def main(profile: str, stack_state: str, max_sweeps: int, sweep_time: int, ignor
     """
 
     session = boto3.Session(profile_name=profile)
-    cfn = session.resource('cloudformation')
+    cfn = session.client('cloudformation')
 
     stacks = [
-        stack for stack in cfn.stacks.all()
+        stack for stack in get_all_stacks(cfn)
         if correct_state(stack, stack_state) and not is_nested(stack)
     ]
     stacks = [
         stack for stack in stacks
-        if stack.name not in ignore
+        if stack['StackName'] not in ignore
     ]
     stacks.sort(key=changed_time, reverse=True)
     headers = ['Stack Name', 'Last Changed Time', 'Stack Status']
     table = []
     for stack in stacks:
         last_changed = changed_time(stack).strftime("%Y-%m-%d %H:%M:%S")
-        table.append([stack.name, last_changed, stack.stack_status])
+        table.append([stack['StackName'], last_changed, stack['StackStatus']])
 
     if not stacks:
         click.echo("There are not any stacks to delete.")
