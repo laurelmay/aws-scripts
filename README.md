@@ -74,6 +74,14 @@ This helps deregister managed instances from AWS Systems Manager that have enter
 Use this script to load a JSON file into DynamoDB via `dynamodb:PutItem` API calls.
 This does not perform any sort of transformation and uses the low-level `boto3` client.
 
+### `enumerate_metadata.py`
+
+This walks the information that is available via the IMDS. This is basically only functional
+when running on compute within AWS. Additionally, it focuses primarily on environments where
+`169.254.169.254` (or the IPv6 equivalent) are available, so it may not be suitable for other
+services (such as CloudShell); though modifying it to work there should be somewhat trivial via
+the constants defined at the start of the script.
+
 ### find-ip-addrs.py
 
 This script will list available IP addresses in one or more subnets in an AWS account
